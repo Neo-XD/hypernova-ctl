@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use hypernova_ctl::device::HypernovaDevice;
+use hypernova_ctl::device::{HypernovaDevice, PollingRateStep};
 use hypernova_ctl::protocol::{Lod, PollingRate, RgbColor, SensorMode};
-use hypernova_ctl::transport::HidApiTransport;
+use hypernova_ctl::transport::{HidApiTransport, TransportError};
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -18,8 +18,11 @@ enum Command {
     /// Configure DPI stages, active stage, and stage count.
     #[command(subcommand)]
     Dpi(DpiCommand),
-    /// Set USB polling rate in Hz (125, 250, 500, 1000, 2000, 4000).
-    Rate { hz: u16 },
+    /// Read or set USB polling rate (<hz>, up, down, cycle, max; omit to read current).
+    Rate {
+        #[arg(value_parser = parse_rate_action)]
+        action: Option<RateAction>,
+    },
     /// Set lift-off distance (1mm or 2mm).
     Lod { height: LodArg },
     /// Set button debounce time in ms (0..=30).
@@ -75,6 +78,36 @@ enum ToggleArg {
     Off,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RateAction {
+    Exact(PollingRate),
+    Up,
+    Down,
+    Cycle,
+    Max,
+}
+
+fn parse_rate_action(input: &str) -> Result<RateAction, String> {
+    if input.eq_ignore_ascii_case("up") {
+        return Ok(RateAction::Up);
+    }
+    if input.eq_ignore_ascii_case("down") {
+        return Ok(RateAction::Down);
+    }
+    if input.eq_ignore_ascii_case("cycle") {
+        return Ok(RateAction::Cycle);
+    }
+    if input.eq_ignore_ascii_case("max") {
+        return Ok(RateAction::Max);
+    }
+    let hz: u16 = input
+        .parse()
+        .map_err(|_| format!("expected Hz (125..4000) or up/down/cycle/max, got '{input}'"))?;
+    PollingRate::from_hz(hz)
+        .map(RateAction::Exact)
+        .map_err(|e| e.to_string())
+}
+
 fn parse_hex_rgb(input: &str) -> Result<RgbColor, String> {
     let hex = input.strip_prefix('#').unwrap_or(input);
     if hex.len() != 6 {
@@ -116,7 +149,14 @@ fn print_status(dev: &HypernovaDevice<HidApiTransport>) -> Result<(), String> {
         if batt.charging { ", charging" } else { "" }
     );
     println!("Polling Rate:   {}", cfg.polling_rate);
-    println!("Sensor Mode:    {}", cfg.sensor_mode);
+    if cfg.polling_rate.manages_sensor_mode_internally() {
+        println!(
+            "Sensor Mode:    {} (firmware-managed at {})",
+            cfg.sensor_mode, cfg.polling_rate
+        );
+    } else {
+        println!("Sensor Mode:    {}", cfg.sensor_mode);
+    }
     println!("LOD:            {}", cfg.lod);
     println!("Debounce:       {} ms", cfg.debounce_ms);
     println!("Motion Sync:    {}", on_off(cfg.motion_sync));
@@ -154,6 +194,56 @@ fn on_off(v: bool) -> &'static str {
     if v { "on" } else { "off" }
 }
 
+fn format_supported_rates(rates: &[PollingRate]) -> String {
+    rates
+        .iter()
+        .map(|r| r.hz().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn handle_rate(
+    dev: &HypernovaDevice<HidApiTransport>,
+    action: Option<RateAction>,
+) -> Result<(), String> {
+    match action {
+        None => {
+            if !dev.is_online().map_err(|e| e.to_string())? {
+                return Err(TransportError::DeviceOffline.to_string());
+            }
+            let rate = dev.read_polling_rate().map_err(|e| e.to_string())?;
+            let supported = format_supported_rates(dev.connection_kind().supported_polling_rates());
+            println!("Polling Rate:   {rate}");
+            println!("Connection:     {}", dev.connection_kind());
+            println!("Supported:      {supported} Hz");
+        }
+        Some(RateAction::Exact(rate)) => {
+            dev.set_polling_rate(rate).map_err(|e| e.to_string())?;
+            println!("Polling rate set to {rate}");
+        }
+        Some(RateAction::Max) => {
+            let max = dev.connection_kind().max_polling_rate();
+            dev.set_polling_rate(max).map_err(|e| e.to_string())?;
+            println!("Polling rate set to {max}");
+        }
+        Some(step_action) => {
+            let step = match step_action {
+                RateAction::Up => PollingRateStep::Up,
+                RateAction::Down => PollingRateStep::Down,
+                RateAction::Cycle => PollingRateStep::Cycle,
+                RateAction::Exact(_) | RateAction::Max => unreachable!(),
+            };
+            let (prev, next) = dev.step_polling_rate(step).map_err(|e| e.to_string())?;
+            if prev == next {
+                println!("Polling rate already at {next}");
+            } else {
+                println!("Polling rate changed from {prev} to {next}");
+            }
+        }
+    }
+    Ok(())
+}
+
 fn run(cli: Cli) -> Result<(), String> {
     let transport = HidApiTransport::open().map_err(|e| e.to_string())?;
     let dev = HypernovaDevice::new(transport);
@@ -176,11 +266,7 @@ fn run(cli: Cli) -> Result<(), String> {
             dev.set_max_dpi_stages(count).map_err(|e| e.to_string())?;
             println!("Enabled DPI stages set to {count}");
         }
-        Command::Rate { hz } => {
-            let rate = PollingRate::from_hz(hz).map_err(|e| e.to_string())?;
-            dev.set_polling_rate(rate).map_err(|e| e.to_string())?;
-            println!("Polling rate set to {rate}");
-        }
+        Command::Rate { action } => handle_rate(&dev, action)?,
         Command::Lod { height } => {
             let lod = match height {
                 LodArg::Mm1 => Lod::Mm1,
@@ -240,5 +326,22 @@ fn main() -> ExitCode {
             eprintln!("error: {msg}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rate_action_accepts_hz_and_keywords() {
+        assert_eq!(parse_rate_action("125").unwrap(), RateAction::Exact(PollingRate::Hz125));
+        assert_eq!(parse_rate_action("4000").unwrap(), RateAction::Exact(PollingRate::Hz4000));
+        assert_eq!(parse_rate_action("up").unwrap(), RateAction::Up);
+        assert_eq!(parse_rate_action("DOWN").unwrap(), RateAction::Down);
+        assert_eq!(parse_rate_action("cycle").unwrap(), RateAction::Cycle);
+        assert_eq!(parse_rate_action("max").unwrap(), RateAction::Max);
+        assert!(parse_rate_action("8000").is_err());
+        assert!(parse_rate_action("fast").is_err());
     }
 }

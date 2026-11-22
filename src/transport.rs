@@ -3,8 +3,8 @@ use std::fmt;
 use thiserror::Error;
 
 use crate::protocol::{
-    validate_response, HID_INTERFACE_NUMBER, PACKET_LEN, PID_WIRED, PID_WIRELESS_4K, ProtocolError,
-    VENDOR_ID,
+    validate_response, PollingRate, ProtocolError, HID_INTERFACE_NUMBER, PACKET_LEN, PID_WIRED,
+    PID_WIRELESS_4K, VENDOR_ID, WIRED_POLLING_RATES, WIRELESS_4K_POLLING_RATES,
 };
 
 const READ_TIMEOUT_MS: i32 = 150;
@@ -14,6 +14,22 @@ const MAX_RETRIES: usize = 5;
 pub enum ConnectionKind {
     Wired,
     Wireless4K,
+}
+
+impl ConnectionKind {
+    pub fn supported_polling_rates(self) -> &'static [PollingRate] {
+        match self {
+            Self::Wired => &WIRED_POLLING_RATES,
+            Self::Wireless4K => &WIRELESS_4K_POLLING_RATES,
+        }
+    }
+
+    pub fn max_polling_rate(self) -> PollingRate {
+        match self {
+            Self::Wired => PollingRate::Hz1000,
+            Self::Wireless4K => PollingRate::Hz4000,
+        }
+    }
 }
 
 impl fmt::Display for ConnectionKind {
@@ -33,6 +49,8 @@ impl fmt::Display for ConnectionKind {
 pub enum TransportError {
     #[error("no Cosmic Byte Hypernova mouse or 4K dongle found (VID 0x3554, PID 0xF5FA/0xF5FB)")]
     DeviceNotFound,
+    #[error("mouse is offline or asleep (move mouse to wake)")]
+    DeviceOffline,
     #[error("HID communication failed: {0}")]
     Hid(#[from] hidapi::HidError),
     #[error("device did not respond after {0} attempts")]

@@ -83,6 +83,12 @@ checksum(bytes) = (0x55 - sum(bytes)) mod 256
 | `0xB7..=0xB8` | 1B + 1B csum | `sensorSleepTime` | 10-second ticks (`3`=30 s, `6`=1 min, `30`=5 min .. `240`=40 min; default `6`) |
 | `0xB9..=0xBA` | 1B + 1B csum | `sensorPowerSavingModeEnable` | Sensor mode: `0` = LP (low power), `1` = HP (high performance) |
 
+### Polling Rate Constraints (`sensorrate.obj`, `functionset.obj`)
+
+- Connection limits (`SensorRate::SetHide`): Wired USB (`0xF5FA`) allows `125`, `250`, `500`, and `1000` Hz. The 4K wireless dongle (`0xF5FB`) allows `125`, `250`, `500`, `1000`, `2000`, and `4000` Hz.
+- Pre-write online check (`FunctionSet::SetReportRate`): The vendor driver checks `CMD_GET_ONLINE` (`0x03`) before writing `0x00` and aborts if the mouse is asleep.
+- Sensor mode at `>= 2000` Hz (`SensorRate::on_Button*HZ_clicked`): No extra HID packet is sent. The firmware manages sensor power mode internally and the vendor GUI hides the LP/HP selector (`PostHideModel(1)`).
+
 ### PAW3395 DPI Encoding (`Sensor::WriteDPI` in `sensor.obj`)
 
 Valid range: `50..=26000` DPI in increments of `50`:

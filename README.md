@@ -32,8 +32,13 @@ Unplug and replug the mouse or 4K dongle after applying the rule.
 # Read connection state, firmware version, battery, and all sensor settings
 hypernova-ctl status
 
-# Set polling rate (125, 250, 500, 1000, 2000, 4000 Hz)
+# Read or adjust polling rate (wired: 125..1000 Hz, 4K dongle: 125..4000 Hz)
+hypernova-ctl rate
 hypernova-ctl rate 4000
+hypernova-ctl rate up
+hypernova-ctl rate down
+hypernova-ctl rate cycle
+hypernova-ctl rate max
 
 # Configure DPI stage 2 to 1600 DPI with green LED indicator and select it
 hypernova-ctl dpi set 2 1600 --color 00FF00

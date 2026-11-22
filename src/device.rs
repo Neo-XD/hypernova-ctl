@@ -1,11 +1,18 @@
 use crate::protocol::{
     build_read_flash, build_simple_cmd, build_write_flash_field, encode_paw3395_dpi, flash_addr,
-    parse_battery, parse_flash_config, parse_online, parse_version, BatteryStatus, Lod,
-    MouseConfig, PollingRate, ProtocolError, RgbColor, SensorMode, CMD_CLEAR_SETTING,
-    CMD_GET_BATTERY, CMD_GET_ONLINE, CMD_GET_VERSION, FLASH_CONFIG_LEN, MAX_DPI_STAGES,
-    MAX_FLASH_CHUNK,
+    parse_battery, parse_flash_config, parse_online, parse_polling_rate_field, parse_version,
+    BatteryStatus, Lod, MouseConfig, PollingRate, ProtocolError, RgbColor, SensorMode,
+    CMD_CLEAR_SETTING, CMD_GET_BATTERY, CMD_GET_ONLINE, CMD_GET_VERSION, FLASH_CONFIG_LEN,
+    MAX_DPI_STAGES, MAX_FLASH_CHUNK,
 };
 use crate::transport::{ConnectionKind, HidTransport, TransportError};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PollingRateStep {
+    Up,
+    Down,
+    Cycle,
+}
 
 pub struct HypernovaDevice<T: HidTransport> {
     transport: T,
@@ -52,8 +59,41 @@ impl<T: HidTransport> HypernovaDevice<T> {
         Ok(parse_flash_config(&flash))
     }
 
+    pub fn read_polling_rate(&self) -> Result<PollingRate, TransportError> {
+        let req = build_read_flash(flash_addr::REPORT_RATE, 2)?;
+        let resp = self.transport.exchange(&req)?;
+        Ok(parse_polling_rate_field([resp[6], resp[7]]))
+    }
+
     pub fn set_polling_rate(&self, rate: PollingRate) -> Result<(), TransportError> {
+        let supported = self.connection_kind().supported_polling_rates();
+        if !supported.contains(&rate) {
+            return Err(ProtocolError::UnsupportedPollingRateForConnection {
+                rate_hz: rate.hz(),
+                max_hz: self.connection_kind().max_polling_rate().hz(),
+            }
+            .into());
+        }
+        self.ensure_online()?;
         self.write_u8(flash_addr::REPORT_RATE, rate as u8)
+    }
+
+    pub fn step_polling_rate(
+        &self,
+        step: PollingRateStep,
+    ) -> Result<(PollingRate, PollingRate), TransportError> {
+        self.ensure_online()?;
+        let current = self.read_polling_rate()?;
+        let supported = self.connection_kind().supported_polling_rates();
+        let next = match step {
+            PollingRateStep::Up => current.step_up(supported),
+            PollingRateStep::Down => current.step_down(supported),
+            PollingRateStep::Cycle => current.cycle(supported),
+        };
+        if next != current {
+            self.write_u8(flash_addr::REPORT_RATE, next as u8)?;
+        }
+        Ok((current, next))
     }
 
     pub fn set_max_dpi_stages(&self, count: u8) -> Result<(), TransportError> {
@@ -132,6 +172,13 @@ impl<T: HidTransport> HypernovaDevice<T> {
         Ok(())
     }
 
+    fn ensure_online(&self) -> Result<(), TransportError> {
+        if !self.is_online()? {
+            return Err(TransportError::DeviceOffline);
+        }
+        Ok(())
+    }
+
     fn write_u8(&self, addr: u16, value: u8) -> Result<(), TransportError> {
         self.write_field(addr, &[value])
     }
@@ -157,13 +204,29 @@ mod tests {
     use std::cell::RefCell;
 
     struct FakeTransport {
+        kind: ConnectionKind,
+        online: bool,
         flash: RefCell<[u8; FLASH_CONFIG_LEN]>,
         sent: RefCell<Vec<[u8; PACKET_LEN]>>,
     }
 
     impl FakeTransport {
         fn new() -> Self {
+            Self::with_state(ConnectionKind::Wireless4K, true)
+        }
+
+        fn wired() -> Self {
+            Self::with_state(ConnectionKind::Wired, true)
+        }
+
+        fn offline() -> Self {
+            Self::with_state(ConnectionKind::Wireless4K, false)
+        }
+
+        fn with_state(kind: ConnectionKind, online: bool) -> Self {
             Self {
+                kind,
+                online,
                 flash: RefCell::new([0xFFu8; FLASH_CONFIG_LEN]),
                 sent: RefCell::new(Vec::new()),
             }
@@ -172,7 +235,7 @@ mod tests {
 
     impl HidTransport for FakeTransport {
         fn connection_kind(&self) -> ConnectionKind {
-            ConnectionKind::Wireless4K
+            self.kind
         }
 
         fn exchange(&self, req: &[u8; PACKET_LEN]) -> Result<[u8; PACKET_LEN], TransportError> {
@@ -181,6 +244,9 @@ mod tests {
             resp[0] = REPORT_ID;
             resp[1] = req[1];
             match req[1] {
+                CMD_GET_ONLINE => {
+                    resp[6] = u8::from(self.online);
+                }
                 CMD_WRITE_FLASH => {
                     let addr = usize::from(u16::from_be_bytes([req[3], req[4]]));
                     let len = usize::from(req[5]);
@@ -245,5 +311,104 @@ mod tests {
         assert!(dev.set_sleep_time(Some(20)).is_err());
         assert!(dev.set_sleep_time(Some(35)).is_err());
         assert!(dev.set_sleep_time(Some(2410)).is_err());
+    }
+
+    #[test]
+    fn wired_connection_rejects_2k_and_4k_without_hid_io() {
+        let dev = HypernovaDevice::new(FakeTransport::wired());
+        let err_2k = dev.set_polling_rate(PollingRate::Hz2000).unwrap_err();
+        assert!(matches!(
+            err_2k,
+            TransportError::Protocol(ProtocolError::UnsupportedPollingRateForConnection {
+                rate_hz: 2000,
+                max_hz: 1000
+            })
+        ));
+        let err_4k = dev.set_polling_rate(PollingRate::Hz4000).unwrap_err();
+        assert!(matches!(
+            err_4k,
+            TransportError::Protocol(ProtocolError::UnsupportedPollingRateForConnection {
+                rate_hz: 4000,
+                max_hz: 1000
+            })
+        ));
+        assert!(dev.transport.sent.borrow().is_empty());
+    }
+
+    #[test]
+    fn polling_rate_write_and_step_fail_when_mouse_is_offline() {
+        let dev = HypernovaDevice::new(FakeTransport::offline());
+        assert!(matches!(
+            dev.set_polling_rate(PollingRate::Hz1000),
+            Err(TransportError::DeviceOffline)
+        ));
+        assert!(matches!(
+            dev.step_polling_rate(PollingRateStep::Up),
+            Err(TransportError::DeviceOffline)
+        ));
+        assert!(dev
+            .transport
+            .sent
+            .borrow()
+            .iter()
+            .all(|pkt| pkt[1] == CMD_GET_ONLINE));
+    }
+
+    #[test]
+    fn read_polling_rate_reads_only_two_bytes_at_zero() {
+        let dev = HypernovaDevice::new(FakeTransport::new());
+        dev.set_polling_rate(PollingRate::Hz2000).unwrap();
+        dev.transport.sent.borrow_mut().clear();
+
+        assert_eq!(dev.read_polling_rate().unwrap(), PollingRate::Hz2000);
+        let sent = dev.transport.sent.borrow();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0][1], CMD_READ_FLASH);
+        assert_eq!(sent[0][3..5], [0x00, 0x00]);
+        assert_eq!(sent[0][5], 2);
+    }
+
+    #[test]
+    fn step_polling_rate_clamps_skips_redundant_writes_and_cycles() {
+        let wired = HypernovaDevice::new(FakeTransport::wired());
+        wired.set_polling_rate(PollingRate::Hz1000).unwrap();
+        wired.transport.sent.borrow_mut().clear();
+
+        assert_eq!(
+            wired.step_polling_rate(PollingRateStep::Up).unwrap(),
+            (PollingRate::Hz1000, PollingRate::Hz1000)
+        );
+        assert!(wired
+            .transport
+            .sent
+            .borrow()
+            .iter()
+            .all(|pkt| pkt[1] != CMD_WRITE_FLASH));
+
+        assert_eq!(
+            wired.step_polling_rate(PollingRateStep::Cycle).unwrap(),
+            (PollingRate::Hz1000, PollingRate::Hz125)
+        );
+        assert_eq!(wired.read_polling_rate().unwrap(), PollingRate::Hz125);
+
+        assert_eq!(
+            wired.step_polling_rate(PollingRateStep::Down).unwrap(),
+            (PollingRate::Hz125, PollingRate::Hz125)
+        );
+
+        let wireless = HypernovaDevice::new(FakeTransport::new());
+        wireless.set_polling_rate(PollingRate::Hz1000).unwrap();
+        assert_eq!(
+            wireless.step_polling_rate(PollingRateStep::Up).unwrap(),
+            (PollingRate::Hz1000, PollingRate::Hz2000)
+        );
+        assert_eq!(
+            wireless.step_polling_rate(PollingRateStep::Up).unwrap(),
+            (PollingRate::Hz2000, PollingRate::Hz4000)
+        );
+        assert_eq!(
+            wireless.step_polling_rate(PollingRateStep::Cycle).unwrap(),
+            (PollingRate::Hz4000, PollingRate::Hz125)
+        );
     }
 }

@@ -49,6 +49,8 @@ pub enum ProtocolError {
     UnexpectedCommand { expected: u8, actual: u8 },
     #[error("invalid polling rate {0} Hz (supported: 125, 250, 500, 1000, 2000, 4000)")]
     InvalidPollingRate(u16),
+    #[error("polling rate {rate_hz} Hz is not supported on this connection (max {max_hz} Hz)")]
+    UnsupportedPollingRateForConnection { rate_hz: u16, max_hz: u16 },
     #[error("invalid DPI {0} (must be 50..=26000 in steps of 50)")]
     InvalidDpi(u16),
     #[error("invalid DPI stage {0} (must be 1..={max})", max = MAX_DPI_STAGES)]
@@ -141,6 +143,22 @@ pub enum PollingRate {
     Hz4000 = 0x20,
 }
 
+pub const WIRED_POLLING_RATES: [PollingRate; 4] = [
+    PollingRate::Hz125,
+    PollingRate::Hz250,
+    PollingRate::Hz500,
+    PollingRate::Hz1000,
+];
+
+pub const WIRELESS_4K_POLLING_RATES: [PollingRate; 6] = [
+    PollingRate::Hz125,
+    PollingRate::Hz250,
+    PollingRate::Hz500,
+    PollingRate::Hz1000,
+    PollingRate::Hz2000,
+    PollingRate::Hz4000,
+];
+
 impl PollingRate {
     pub fn from_hz(hz: u16) -> Result<Self, ProtocolError> {
         match hz {
@@ -175,6 +193,58 @@ impl PollingRate {
             Self::Hz2000 => 2000,
             Self::Hz4000 => 4000,
         }
+    }
+
+    pub fn step_up(self, supported: &[Self]) -> Self {
+        if let Some(idx) = supported.iter().position(|&r| r == self) {
+            supported[(idx + 1).min(supported.len() - 1)]
+        } else {
+            supported
+                .iter()
+                .copied()
+                .find(|r| r.hz() > self.hz())
+                .or_else(|| supported.last().copied())
+                .unwrap_or(self)
+        }
+    }
+
+    pub fn step_down(self, supported: &[Self]) -> Self {
+        if let Some(idx) = supported.iter().position(|&r| r == self) {
+            supported[idx.saturating_sub(1)]
+        } else {
+            supported
+                .iter()
+                .rev()
+                .copied()
+                .find(|r| r.hz() < self.hz())
+                .or_else(|| supported.first().copied())
+                .unwrap_or(self)
+        }
+    }
+
+    pub fn cycle(self, supported: &[Self]) -> Self {
+        if let Some(idx) = supported.iter().position(|&r| r == self) {
+            supported[(idx + 1) % supported.len()]
+        } else {
+            supported
+                .iter()
+                .copied()
+                .find(|r| r.hz() > self.hz())
+                .or_else(|| supported.first().copied())
+                .unwrap_or(self)
+        }
+    }
+
+    pub fn manages_sensor_mode_internally(self) -> bool {
+        matches!(self, Self::Hz2000 | Self::Hz4000)
+    }
+}
+
+pub fn parse_polling_rate_field(bytes: [u8; 2]) -> PollingRate {
+    if bytes[1] == checksum(&bytes[..1]) {
+        PollingRate::from_wire(bytes[0]).unwrap_or(PollingRate::Hz1000)
+    } else {
+        PollingRate::Hz1000
     }
 }
 
@@ -341,8 +411,10 @@ fn read_triple_field(flash: &[u8; FLASH_CONFIG_LEN], addr: u16, default: [u8; 3]
 }
 
 pub fn parse_flash_config(flash: &[u8; FLASH_CONFIG_LEN]) -> MouseConfig {
-    let rate_raw = read_u8_field(flash, flash_addr::REPORT_RATE, PollingRate::Hz1000 as u8);
-    let polling_rate = PollingRate::from_wire(rate_raw).unwrap_or(PollingRate::Hz1000);
+    let polling_rate = parse_polling_rate_field([
+        flash[usize::from(flash_addr::REPORT_RATE)],
+        flash[usize::from(flash_addr::REPORT_RATE) + 1],
+    ]);
     let max_dpi_stages = read_u8_field(flash, flash_addr::MAX_DPI, MAX_DPI_STAGES as u8);
     let raw_active = read_u8_field(flash, flash_addr::CURRENT_DPI, 2);
     let active_dpi_stage = if raw_active < max_dpi_stages {
@@ -505,5 +577,36 @@ mod tests {
         assert_eq!(cfg.sensor_mode, SensorMode::HighPerformance);
         assert_eq!(cfg.dpi_stages[1].x, 1600);
         assert_eq!(cfg.dpi_stages[1].y, 1600);
+    }
+
+    #[test]
+    fn polling_rate_step_clamps_and_cycles_within_supported_slice() {
+        assert_eq!(PollingRate::Hz125.step_down(&WIRED_POLLING_RATES), PollingRate::Hz125);
+        assert_eq!(PollingRate::Hz500.step_down(&WIRED_POLLING_RATES), PollingRate::Hz250);
+        assert_eq!(PollingRate::Hz500.step_up(&WIRED_POLLING_RATES), PollingRate::Hz1000);
+        assert_eq!(PollingRate::Hz1000.step_up(&WIRED_POLLING_RATES), PollingRate::Hz1000);
+        assert_eq!(PollingRate::Hz1000.cycle(&WIRED_POLLING_RATES), PollingRate::Hz125);
+        assert_eq!(PollingRate::Hz1000.step_up(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz2000);
+        assert_eq!(PollingRate::Hz4000.step_up(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz4000);
+        assert_eq!(PollingRate::Hz4000.cycle(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz125);
+        // When flash holds a wireless-only rate while connected wired, stepping falls back into range.
+        assert_eq!(PollingRate::Hz4000.step_up(&WIRED_POLLING_RATES), PollingRate::Hz1000);
+        assert_eq!(PollingRate::Hz4000.step_down(&WIRED_POLLING_RATES), PollingRate::Hz1000);
+        assert_eq!(PollingRate::Hz4000.cycle(&WIRED_POLLING_RATES), PollingRate::Hz125);
+    }
+
+    #[test]
+    fn polling_rate_identifies_firmware_managed_sensor_mode() {
+        assert!(!PollingRate::Hz125.manages_sensor_mode_internally());
+        assert!(!PollingRate::Hz1000.manages_sensor_mode_internally());
+        assert!(PollingRate::Hz2000.manages_sensor_mode_internally());
+        assert!(PollingRate::Hz4000.manages_sensor_mode_internally());
+    }
+
+    #[test]
+    fn parse_polling_rate_field_validates_checksum_and_falls_back() {
+        let valid = [PollingRate::Hz4000 as u8, checksum(&[PollingRate::Hz4000 as u8])];
+        assert_eq!(parse_polling_rate_field(valid), PollingRate::Hz4000);
+        assert_eq!(parse_polling_rate_field([PollingRate::Hz4000 as u8, 0x00]), PollingRate::Hz1000);
     }
 }
