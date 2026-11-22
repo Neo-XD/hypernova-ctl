@@ -1,0 +1,15 @@
+[package]
+name = "hypernova-ctl"
+version = "0.1.0"
+edition = "2021"
+description = "Linux CLI and library for configuring the Cosmic Byte Hypernova gaming mouse"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+thiserror = "2.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+hidapi = { version = "2.6", default-features = false, features = ["linux-native"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+hidapi = "2.6"

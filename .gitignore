@@ -1,0 +1,6 @@
+/target/
+/Cosmic Byte Hypernova Gaming Mouse/
+/prompts/
+*.rs.bk
+.DS_Store
+Thumbs.db
