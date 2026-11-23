@@ -3,10 +3,16 @@ use hypernova_ctl::device::{HypernovaDevice, PollingRateStep};
 use hypernova_ctl::protocol::{Lod, PollingRate, RgbColor, SensorMode};
 use hypernova_ctl::transport::{HidApiTransport, TransportError};
 use std::process::ExitCode;
+use std::time::Duration;
+
+const WAKE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Parser)]
 #[command(name = "hypernova-ctl", version, about = "Configure Cosmic Byte Hypernova gaming mouse")]
 struct Cli {
+    /// Seconds to wait for a sleeping wireless mouse to wake (0 to fail immediately).
+    #[arg(long, global = true, default_value_t = 5)]
+    wait: u64,
     #[command(subcommand)]
     command: Command,
 }
@@ -129,10 +135,35 @@ fn parse_sleep_arg(input: &str) -> Result<Option<u16>, String> {
     Ok(Some(secs))
 }
 
-fn print_status(dev: &HypernovaDevice<HidApiTransport>) -> Result<(), String> {
-    let online = dev.is_online().map_err(|e| e.to_string())?;
+fn ensure_awake(dev: &HypernovaDevice<HidApiTransport>, wait_secs: u64) -> Result<(), String> {
+    dev.wait_until_online(Duration::from_secs(wait_secs), WAKE_POLL_INTERVAL, || {
+        eprintln!("Mouse is asleep. Move your mouse within {wait_secs}s to apply...");
+    })
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+fn print_status(dev: &HypernovaDevice<HidApiTransport>, wait_secs: u64) -> Result<(), String> {
     println!("Connection:     {}", dev.connection_kind());
-    println!("Mouse Online:   {}", if online { "yes" } else { "no (move mouse to wake)" });
+    let online = match dev.wait_until_online(
+        Duration::from_secs(wait_secs),
+        WAKE_POLL_INTERVAL,
+        || {
+            eprintln!("Mouse is asleep. Move your mouse within {wait_secs}s to wake...");
+        },
+    ) {
+        Ok(_) => true,
+        Err(TransportError::DeviceOffline) => false,
+        Err(e) => return Err(e.to_string()),
+    };
+    println!(
+        "Mouse Online:   {}",
+        if online {
+            "yes"
+        } else {
+            "no (move mouse to wake)"
+        }
+    );
     if !online {
         return Ok(());
     }
@@ -208,9 +239,6 @@ fn handle_rate(
 ) -> Result<(), String> {
     match action {
         None => {
-            if !dev.is_online().map_err(|e| e.to_string())? {
-                return Err(TransportError::DeviceOffline.to_string());
-            }
             let rate = dev.read_polling_rate().map_err(|e| e.to_string())?;
             let supported = format_supported_rates(dev.connection_kind().supported_polling_rates());
             println!("Polling Rate:   {rate}");
@@ -248,8 +276,13 @@ fn run(cli: Cli) -> Result<(), String> {
     let transport = HidApiTransport::open().map_err(|e| e.to_string())?;
     let dev = HypernovaDevice::new(transport);
 
+    if matches!(cli.command, Command::Status) {
+        return print_status(&dev, cli.wait);
+    }
+    ensure_awake(&dev, cli.wait)?;
+
     match cli.command {
-        Command::Status => print_status(&dev)?,
+        Command::Status => unreachable!(),
         Command::Dpi(DpiCommand::Set { stage, dpi, y, color }) => {
             let y_dpi = y.unwrap_or(dpi);
             dev.set_dpi_stage(stage, dpi, y_dpi).map_err(|e| e.to_string())?;
@@ -343,5 +376,19 @@ mod tests {
         assert_eq!(parse_rate_action("max").unwrap(), RateAction::Max);
         assert!(parse_rate_action("8000").is_err());
         assert!(parse_rate_action("fast").is_err());
+    }
+
+    #[test]
+    fn cli_wait_defaults_to_five_seconds_and_accepts_override() {
+        let default_cli = Cli::try_parse_from(["hypernova-ctl", "rate", "4000"]).unwrap();
+        assert_eq!(default_cli.wait, 5);
+
+        let zero_wait = Cli::try_parse_from(["hypernova-ctl", "--wait", "0", "rate", "1000"])
+            .unwrap();
+        assert_eq!(zero_wait.wait, 0);
+
+        let after_subcmd = Cli::try_parse_from(["hypernova-ctl", "rate", "up", "--wait", "10"])
+            .unwrap();
+        assert_eq!(after_subcmd.wait, 10);
     }
 }

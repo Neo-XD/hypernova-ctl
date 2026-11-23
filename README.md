@@ -32,6 +32,9 @@ Unplug and replug the mouse or 4K dongle after applying the rule.
 # Read connection state, firmware version, battery, and all sensor settings
 hypernova-ctl status
 
+# Wait up to 5s by default if the wireless mouse is asleep (use --wait 0 to fail immediately)
+hypernova-ctl --wait 10 rate 4000
+
 # Read or adjust polling rate (wired: 125..1000 Hz, 4K dongle: 125..4000 Hz)
 hypernova-ctl rate
 hypernova-ctl rate 4000

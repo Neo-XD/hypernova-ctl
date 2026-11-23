@@ -1,3 +1,6 @@
+use std::thread;
+use std::time::Duration;
+
 use crate::protocol::{
     build_read_flash, build_simple_cmd, build_write_flash_field, encode_paw3395_dpi, flash_addr,
     parse_battery, parse_flash_config, parse_online, parse_polling_rate_field, parse_version,
@@ -30,6 +33,50 @@ impl<T: HidTransport> HypernovaDevice<T> {
     pub fn is_online(&self) -> Result<bool, TransportError> {
         let resp = self.transport.exchange(&build_simple_cmd(CMD_GET_ONLINE))?;
         Ok(parse_online(&resp)?)
+    }
+
+    pub fn wait_until_online<F>(
+        &self,
+        timeout: Duration,
+        poll_interval: Duration,
+        on_offline: F,
+    ) -> Result<bool, TransportError>
+    where
+        F: FnMut(),
+    {
+        let max_attempts = if timeout.is_zero() || poll_interval.is_zero() {
+            0
+        } else {
+            let attempts = timeout.as_millis().div_ceil(poll_interval.as_millis());
+            usize::try_from(attempts).unwrap_or(usize::MAX)
+        };
+        self.wait_until_online_with(max_attempts, on_offline, || thread::sleep(poll_interval))
+    }
+
+    pub fn wait_until_online_with<F, S>(
+        &self,
+        max_attempts: usize,
+        mut on_offline: F,
+        mut wait_step: S,
+    ) -> Result<bool, TransportError>
+    where
+        F: FnMut(),
+        S: FnMut(),
+    {
+        if self.is_online()? {
+            return Ok(false);
+        }
+        if max_attempts == 0 {
+            return Err(TransportError::DeviceOffline);
+        }
+        on_offline();
+        for _ in 0..max_attempts {
+            wait_step();
+            if self.is_online()? {
+                return Ok(true);
+            }
+        }
+        Err(TransportError::DeviceOffline)
     }
 
     pub fn battery(&self) -> Result<BatteryStatus, TransportError> {
@@ -201,32 +248,36 @@ fn validate_stage(stage_one_based: u8) -> Result<u8, ProtocolError> {
 mod tests {
     use super::*;
     use crate::protocol::{checksum, CMD_READ_FLASH, CMD_WRITE_FLASH, PACKET_LEN, REPORT_ID};
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     struct FakeTransport {
         kind: ConnectionKind,
-        online: bool,
+        offline_polls: Cell<usize>,
         flash: RefCell<[u8; FLASH_CONFIG_LEN]>,
         sent: RefCell<Vec<[u8; PACKET_LEN]>>,
     }
 
     impl FakeTransport {
         fn new() -> Self {
-            Self::with_state(ConnectionKind::Wireless4K, true)
+            Self::with_offline_polls(ConnectionKind::Wireless4K, 0)
         }
 
         fn wired() -> Self {
-            Self::with_state(ConnectionKind::Wired, true)
+            Self::with_offline_polls(ConnectionKind::Wired, 0)
         }
 
         fn offline() -> Self {
-            Self::with_state(ConnectionKind::Wireless4K, false)
+            Self::with_offline_polls(ConnectionKind::Wireless4K, usize::MAX)
         }
 
-        fn with_state(kind: ConnectionKind, online: bool) -> Self {
+        fn waking_after(offline_polls: usize) -> Self {
+            Self::with_offline_polls(ConnectionKind::Wireless4K, offline_polls)
+        }
+
+        fn with_offline_polls(kind: ConnectionKind, offline_polls: usize) -> Self {
             Self {
                 kind,
-                online,
+                offline_polls: Cell::new(offline_polls),
                 flash: RefCell::new([0xFFu8; FLASH_CONFIG_LEN]),
                 sent: RefCell::new(Vec::new()),
             }
@@ -245,7 +296,13 @@ mod tests {
             resp[1] = req[1];
             match req[1] {
                 CMD_GET_ONLINE => {
-                    resp[6] = u8::from(self.online);
+                    let remaining = self.offline_polls.get();
+                    if remaining > 0 {
+                        self.offline_polls.set(remaining.saturating_sub(1));
+                        resp[6] = 0;
+                    } else {
+                        resp[6] = 1;
+                    }
                 }
                 CMD_WRITE_FLASH => {
                     let addr = usize::from(u16::from_be_bytes([req[3], req[4]]));
@@ -410,5 +467,46 @@ mod tests {
             wireless.step_polling_rate(PollingRateStep::Cycle).unwrap(),
             (PollingRate::Hz4000, PollingRate::Hz125)
         );
+    }
+
+    #[test]
+    fn wait_until_online_skips_prompt_when_awake_and_polls_when_asleep() {
+        let awake = HypernovaDevice::new(FakeTransport::new());
+        let mut prompted = 0;
+        let mut sleeps = 0;
+        let waited = awake
+            .wait_until_online_with(5, || prompted += 1, || sleeps += 1)
+            .unwrap();
+        assert!(!waited);
+        assert_eq!(prompted, 0);
+        assert_eq!(sleeps, 0);
+
+        let waking = HypernovaDevice::new(FakeTransport::waking_after(2));
+        let mut prompted = 0;
+        let mut sleeps = 0;
+        let waited = waking
+            .wait_until_online_with(5, || prompted += 1, || sleeps += 1)
+            .unwrap();
+        assert!(waited);
+        assert_eq!(prompted, 1);
+        assert_eq!(sleeps, 2);
+
+        let sleeping = HypernovaDevice::new(FakeTransport::offline());
+        let mut prompted = 0;
+        let mut sleeps = 0;
+        let err = sleeping
+            .wait_until_online_with(3, || prompted += 1, || sleeps += 1)
+            .unwrap_err();
+        assert!(matches!(err, TransportError::DeviceOffline));
+        assert_eq!(prompted, 1);
+        assert_eq!(sleeps, 3);
+
+        let no_wait = HypernovaDevice::new(FakeTransport::offline());
+        let mut prompted = 0;
+        let err = no_wait
+            .wait_until_online_with(0, || prompted += 1, || {})
+            .unwrap_err();
+        assert!(matches!(err, TransportError::DeviceOffline));
+        assert_eq!(prompted, 0);
     }
 }
