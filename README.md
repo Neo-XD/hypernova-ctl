@@ -4,27 +4,38 @@ Linux CLI and Rust library for configuring the Cosmic Byte Hypernova gaming mous
 
 See [docs/PROTOCOL.md](docs/PROTOCOL.md) for the reverse-engineered HID protocol specification.
 
-## Build on Linux
+## Install on Linux
 
-Install `libudev-dev` (Debian/Ubuntu) or `systemd-devel` (Fedora) for `hidapi` `linux-native` (`hidraw`), then build:
+Install `libudev` development headers before building from source: `systemd-libs` on Arch/CachyOS, `libudev-dev` on Debian/Ubuntu, or `systemd-devel` on Fedora.
+
+### Arch / CachyOS (`makepkg`)
 
 ```sh
-cargo build --release
+cd packaging/arch
+makepkg -si
 ```
 
-The binary is written to `target/release/hypernova-ctl`.
+This installs `/usr/bin/hypernova-ctl` and `/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules`. Pacman reloads udev rules automatically. Unplug and replug the mouse or 4K dongle after installing.
 
-## udev Rule (Non-Root Access)
-
-Copy `99-cosmic-byte-hypernova.rules` into `/etc/udev/rules.d/` and reload udev:
+### Any Linux Distro (`make`)
 
 ```sh
+make
+sudo make install
+```
+
+This builds the stripped release binary, installs `/usr/local/bin/hypernova-ctl` and `/etc/udev/rules.d/99-cosmic-byte-hypernova.rules`, and reloads udev. Override `PREFIX` or `DESTDIR` if needed. Run `sudo make uninstall` to remove both files. Unplug and replug the mouse or 4K dongle after installing.
+
+### Cargo User Install
+
+```sh
+cargo install --path .
 sudo cp 99-cosmic-byte-hypernova.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-Unplug and replug the mouse or 4K dongle after applying the rule.
+Unplug and replug the mouse or 4K dongle after applying the udev rule.
 
 ## Usage
 

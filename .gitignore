@@ -1,6 +1,10 @@
 /target/
 /Cosmic Byte Hypernova Gaming Mouse/
 /prompts/
+/packaging/arch/pkg/
+/packaging/arch/src/
+/packaging/arch/hypernova-ctl/
+/packaging/arch/*.pkg.tar.*
 *.rs.bk
 .DS_Store
 Thumbs.db

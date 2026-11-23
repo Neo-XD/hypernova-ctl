@@ -3,6 +3,11 @@ name = "hypernova-ctl"
 version = "0.1.0"
 edition = "2021"
 description = "Linux CLI and library for configuring the Cosmic Byte Hypernova gaming mouse"
+license = "MIT"
+repository = "https://github.com/Neo-XD/hypernova-ctl"
+readme = "README.md"
+keywords = ["hid", "mouse", "linux", "cli"]
+categories = ["command-line-utilities", "hardware-support"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -13,3 +18,8 @@ hidapi = { version = "2.6", default-features = false, features = ["linux-native"
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 hidapi = "2.6"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

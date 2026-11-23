@@ -1,0 +1,39 @@
+pkgname=hypernova-ctl
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Linux CLI for configuring the Cosmic Byte Hypernova gaming mouse"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Neo-XD/hypernova-ctl"
+license=('MIT')
+depends=('systemd-libs' 'gcc-libs' 'glibc')
+makedepends=('cargo' 'git')
+source=("$pkgname::git+file://${startdir// /%20}/../..")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+check() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
+    export CARGO_TARGET_DIR=target
+    cargo test --frozen
+}
+
+package() {
+    cd "$pkgname"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 "99-cosmic-byte-hypernova.rules" "$pkgdir/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
