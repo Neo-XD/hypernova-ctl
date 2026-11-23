@@ -7,11 +7,50 @@ use std::time::Duration;
 
 const WAKE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+const HELP_EXAMPLES: &str = "\
+Examples:
+  hypernova-ctl status
+  hypernova-ctl rate 4000
+  hypernova-ctl rate up
+  hypernova-ctl dpi set 2 1600 --color 00FF00
+  hypernova-ctl lod 1mm
+  hypernova-ctl debounce 4
+  hypernova-ctl sleep 300
+
+Run 'hypernova-ctl --help' for all examples or 'hypernova-ctl <command> -h' for subcommand options.";
+
+const LONG_HELP_EXAMPLES: &str = "\
+Examples:
+  hypernova-ctl status
+  hypernova-ctl --wait 10 rate 4000
+  hypernova-ctl rate                 Read current rate and connection limits
+  hypernova-ctl rate up              Step polling rate up (also: down, cycle, max)
+  hypernova-ctl dpi set 2 1600 --y 1600 --color 00FF00
+  hypernova-ctl dpi active 2         Switch active DPI stage (1..=6)
+  hypernova-ctl dpi stages 4         Set number of enabled DPI stages (1..=6)
+  hypernova-ctl lod 1mm              Set lift-off distance (1mm or 2mm)
+  hypernova-ctl debounce 4           Set button debounce in ms (0..=30)
+  hypernova-ctl sensor-mode hp       Set sensor mode (lp or hp)
+  hypernova-ctl motion-sync on       Toggle Motion Sync (on or off)
+  hypernova-ctl ripple off           Toggle Ripple Control (on or off)
+  hypernova-ctl angle-snapping off   Toggle Angle Snapping (on or off)
+  hypernova-ctl sleep 300            Set custom sleep timer (30..=2400s in 10s steps, or off)
+  hypernova-ctl reset                Restore factory defaults
+
+Run 'hypernova-ctl <command> -h' for options on a specific command.";
+
 #[derive(Parser)]
-#[command(name = "hypernova-ctl", version, about = "Configure Cosmic Byte Hypernova gaming mouse")]
+#[command(
+    name = "hypernova-ctl",
+    version,
+    about = "Configure the Cosmic Byte Hypernova gaming mouse",
+    arg_required_else_help = true,
+    after_help = HELP_EXAMPLES,
+    after_long_help = LONG_HELP_EXAMPLES
+)]
 struct Cli {
     /// Seconds to wait for a sleeping wireless mouse to wake (0 to fail immediately).
-    #[arg(long, global = true, default_value_t = 5)]
+    #[arg(long, global = true, default_value_t = 5, value_name = "SECONDS")]
     wait: u64,
     #[command(subcommand)]
     command: Command,
@@ -26,23 +65,45 @@ enum Command {
     Dpi(DpiCommand),
     /// Read or set USB polling rate (<hz>, up, down, cycle, max; omit to read current).
     Rate {
+        /// Target Hz (125, 250, 500, 1000, 2000, 4000) or up/down/cycle/max. Omit to read current.
         #[arg(value_parser = parse_rate_action)]
         action: Option<RateAction>,
     },
     /// Set lift-off distance (1mm or 2mm).
-    Lod { height: LodArg },
+    Lod {
+        /// Lift-off distance (1mm or 2mm).
+        height: LodArg,
+    },
     /// Set button debounce time in ms (0..=30).
-    Debounce { ms: u8 },
+    Debounce {
+        /// Debounce time in milliseconds (0..=30).
+        ms: u8,
+    },
     /// Set PAW3395 sensor power mode (lp or hp).
-    SensorMode { mode: SensorModeArg },
+    SensorMode {
+        /// Sensor power mode (lp or hp).
+        mode: SensorModeArg,
+    },
     /// Toggle Motion Sync (on or off).
-    MotionSync { state: ToggleArg },
+    MotionSync {
+        /// Enable or disable Motion Sync (on or off).
+        state: ToggleArg,
+    },
     /// Toggle Ripple Control (on or off).
-    Ripple { state: ToggleArg },
+    Ripple {
+        /// Enable or disable Ripple Control (on or off).
+        state: ToggleArg,
+    },
     /// Toggle Angle Snapping / linear correction (on or off).
-    AngleSnapping { state: ToggleArg },
+    AngleSnapping {
+        /// Enable or disable Angle Snapping (on or off).
+        state: ToggleArg,
+    },
     /// Set custom sleep timer in seconds (30..=2400 in 10s steps) or 'off'.
-    Sleep { value: String },
+    Sleep {
+        /// Sleep timeout in seconds (30..=2400 in 10s steps) or 'off'.
+        value: String,
+    },
     /// Restore factory default settings on the mouse.
     Reset,
 }
@@ -51,17 +112,27 @@ enum Command {
 enum DpiCommand {
     /// Set DPI (and optional Y DPI / indicator color) for a 1-based stage (1..=6).
     Set {
+        /// DPI stage number (1..=6).
         stage: u8,
+        /// X-axis DPI (50..=26000 in 50-DPI steps).
         dpi: u16,
-        #[arg(long)]
+        /// Optional independent Y-axis DPI (50..=26000 in 50-DPI steps).
+        #[arg(long, value_name = "DPI")]
         y: Option<u16>,
-        #[arg(long, value_parser = parse_hex_rgb)]
+        /// Optional 6-digit hex LED color (for example, 00FF00).
+        #[arg(long, value_parser = parse_hex_rgb, value_name = "RRGGBB")]
         color: Option<RgbColor>,
     },
     /// Switch active DPI stage (1..=6).
-    Active { stage: u8 },
+    Active {
+        /// DPI stage number to activate (1..=6).
+        stage: u8,
+    },
     /// Set number of enabled DPI stages (1..=6).
-    Stages { count: u8 },
+    Stages {
+        /// Number of enabled DPI stages (1..=6).
+        count: u8,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -390,5 +461,39 @@ mod tests {
         let after_subcmd = Cli::try_parse_from(["hypernova-ctl", "rate", "up", "--wait", "10"])
             .unwrap();
         assert_eq!(after_subcmd.wait, 10);
+    }
+
+    #[test]
+    fn cli_help_is_valid_and_lists_commands_and_examples() {
+        use clap::CommandFactory;
+
+        Cli::command().debug_assert();
+        let mut cmd = Cli::command();
+
+        let short_help = cmd.render_help().to_string();
+        for expected in [
+            "status",
+            "dpi",
+            "rate",
+            "lod",
+            "debounce",
+            "sensor-mode",
+            "motion-sync",
+            "ripple",
+            "angle-snapping",
+            "sleep",
+            "reset",
+            "--wait <SECONDS>",
+            "Examples:",
+        ] {
+            assert!(
+                short_help.contains(expected),
+                "missing '{expected}' in short help:\n{short_help}"
+            );
+        }
+
+        let long_help = cmd.render_long_help().to_string();
+        assert!(long_help.contains("dpi set 2 1600"));
+        assert!(long_help.contains("rate up"));
     }
 }
