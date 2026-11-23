@@ -15,7 +15,7 @@ cd packaging/arch
 makepkg -si
 ```
 
-This installs `/usr/bin/hypernova-ctl` and `/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules`. Pacman reloads udev rules automatically. Unplug and replug the mouse or 4K dongle after installing.
+This installs `/usr/bin/hypernova-ctl` and `/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules`. Pacman reloads udev rules automatically. Unplug and replug the mouse or 4K dongle once so the new rule applies, then run `hypernova-ctl` from any directory without `sudo`.
 
 ### Any Linux Distro (`make`)
 
@@ -40,6 +40,10 @@ Unplug and replug the mouse or 4K dongle after applying the udev rule.
 ## Usage
 
 ```sh
+# List commands and examples (-h for concise help, --help for full reference)
+hypernova-ctl -h
+hypernova-ctl --help
+
 # Read connection state, firmware version, battery, and all sensor settings
 hypernova-ctl status
 
