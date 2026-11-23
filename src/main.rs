@@ -16,6 +16,7 @@ Examples:
   hypernova-ctl lod 1mm
   hypernova-ctl debounce 4
   hypernova-ctl sleep 300
+  hypernova-ctl tray on
 
 Run 'hypernova-ctl --help' for all examples or 'hypernova-ctl <command> -h' for subcommand options.";
 
@@ -35,6 +36,8 @@ Examples:
   hypernova-ctl ripple off           Toggle Ripple Control (on or off)
   hypernova-ctl angle-snapping off   Toggle Angle Snapping (on or off)
   hypernova-ctl sleep 300            Set custom sleep timer (30..=2400s in 10s steps, or off)
+  hypernova-ctl tray on              Enable and start the system tray indicator
+  hypernova-ctl tray off             Disable and stop the system tray indicator
   hypernova-ctl reset                Restore factory defaults
 
 Run 'hypernova-ctl <command> -h' for options on a specific command.";
@@ -104,8 +107,31 @@ enum Command {
         /// Sleep timeout in seconds (30..=2400 in 10s steps) or 'off'.
         value: String,
     },
+    /// Run or toggle the Linux system tray indicator (on, off, status, run).
+    #[cfg(all(target_os = "linux", feature = "tray"))]
+    Tray {
+        #[command(subcommand)]
+        action: Option<TrayCommand>,
+    },
     /// Restore factory default settings on the mouse.
     Reset,
+}
+
+#[cfg(all(target_os = "linux", feature = "tray"))]
+#[derive(Subcommand)]
+enum TrayCommand {
+    /// Run the system tray indicator in the foreground.
+    Run {
+        /// Polling interval in seconds.
+        #[arg(long, default_value_t = 30, value_name = "SECONDS")]
+        interval: u64,
+    },
+    /// Enable autostart and start the system tray service now.
+    On,
+    /// Disable autostart and stop the system tray service.
+    Off,
+    /// Show whether the system tray service is active and enabled.
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -343,7 +369,39 @@ fn handle_rate(
     Ok(())
 }
 
+#[cfg(all(target_os = "linux", feature = "tray"))]
+fn handle_tray(action: Option<TrayCommand>) -> Result<(), String> {
+    match action.unwrap_or(TrayCommand::Run { interval: 30 }) {
+        TrayCommand::Run { interval } => {
+            if interval == 0 {
+                return Err("tray poll interval must be at least 1 second".to_string());
+            }
+            hypernova_ctl::tray::run_tray(Duration::from_secs(interval))
+        }
+        TrayCommand::On => {
+            hypernova_ctl::tray::enable_service()?;
+            println!("System tray enabled and started");
+            Ok(())
+        }
+        TrayCommand::Off => {
+            hypernova_ctl::tray::disable_service()?;
+            println!("System tray disabled and stopped");
+            Ok(())
+        }
+        TrayCommand::Status => {
+            let status = hypernova_ctl::tray::service_status()?;
+            println!("{status}");
+            Ok(())
+        }
+    }
+}
+
 fn run(cli: Cli) -> Result<(), String> {
+    #[cfg(all(target_os = "linux", feature = "tray"))]
+    if let Command::Tray { action } = cli.command {
+        return handle_tray(action);
+    }
+
     let transport = HidApiTransport::open().map_err(|e| e.to_string())?;
     let dev = HypernovaDevice::new(transport);
 
@@ -354,6 +412,8 @@ fn run(cli: Cli) -> Result<(), String> {
 
     match cli.command {
         Command::Status => unreachable!(),
+        #[cfg(all(target_os = "linux", feature = "tray"))]
+        Command::Tray { .. } => unreachable!(),
         Command::Dpi(DpiCommand::Set { stage, dpi, y, color }) => {
             let y_dpi = y.unwrap_or(dpi);
             dev.set_dpi_stage(stage, dpi, y_dpi).map_err(|e| e.to_string())?;
@@ -495,5 +555,38 @@ mod tests {
         let long_help = cmd.render_long_help().to_string();
         assert!(long_help.contains("dpi set 2 1600"));
         assert!(long_help.contains("rate up"));
+        assert!(long_help.contains("tray on"));
+    }
+
+    #[cfg(all(target_os = "linux", feature = "tray"))]
+    #[test]
+    fn cli_tray_parses_subcommands_and_bare_default() {
+        let bare = Cli::try_parse_from(["hypernova-ctl", "tray"]).unwrap();
+        assert!(matches!(bare.command, Command::Tray { action: None }));
+
+        let on = Cli::try_parse_from(["hypernova-ctl", "tray", "on"]).unwrap();
+        assert!(matches!(
+            on.command,
+            Command::Tray {
+                action: Some(TrayCommand::On)
+            }
+        ));
+
+        let off = Cli::try_parse_from(["hypernova-ctl", "tray", "off"]).unwrap();
+        assert!(matches!(
+            off.command,
+            Command::Tray {
+                action: Some(TrayCommand::Off)
+            }
+        ));
+
+        let run = Cli::try_parse_from(["hypernova-ctl", "tray", "run", "--interval", "15"])
+            .unwrap();
+        assert!(matches!(
+            run.command,
+            Command::Tray {
+                action: Some(TrayCommand::Run { interval: 15 })
+            }
+        ));
     }
 }

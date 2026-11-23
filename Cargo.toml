@@ -9,12 +9,17 @@ readme = "README.md"
 keywords = ["hid", "mouse", "linux", "cli"]
 categories = ["command-line-utilities", "hardware-support"]
 
+[features]
+default = ["tray"]
+tray = ["dep:ksni"]
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 thiserror = "2.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 hidapi = { version = "2.6", default-features = false, features = ["linux-native"] }
+ksni = { version = "0.3", features = ["blocking"], optional = true }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 hidapi = "2.6"

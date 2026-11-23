@@ -1,0 +1,13 @@
+[Unit]
+Description=Cosmic Byte Hypernova system tray indicator
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hypernova-ctl tray run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

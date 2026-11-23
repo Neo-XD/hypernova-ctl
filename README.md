@@ -15,7 +15,7 @@ cd packaging/arch
 makepkg -si
 ```
 
-This installs `/usr/bin/hypernova-ctl` and `/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules`. Pacman reloads udev rules automatically. Unplug and replug the mouse or 4K dongle once so the new rule applies, then run `hypernova-ctl` from any directory without `sudo`.
+This installs `/usr/bin/hypernova-ctl`, `/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules`, and `/usr/lib/systemd/user/hypernova-tray.service` (enabled by default for login). Pacman reloads udev rules automatically. Unplug and replug the mouse or 4K dongle once so the new rule applies, then run `hypernova-ctl` from any directory without `sudo`. Run `hypernova-ctl tray on` to start the tray in the current session, or `hypernova-ctl tray off` to disable it.
 
 ### Any Linux Distro (`make`)
 
@@ -72,4 +72,10 @@ hypernova-ctl ripple off
 hypernova-ctl angle-snapping off
 hypernova-ctl sleep 300
 hypernova-ctl reset
+
+# System tray indicator (KDE Plasma / StatusNotifierItem)
+hypernova-ctl tray on      # Enable autostart and start now
+hypernova-ctl tray off     # Disable autostart and stop
+hypernova-ctl tray status  # Show systemd user service state
+hypernova-ctl tray run     # Run in foreground
 ```

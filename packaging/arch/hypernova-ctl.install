@@ -1,0 +1,13 @@
+post_install() {
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --global enable hypernova-tray.service >/dev/null 2>&1 || true
+    fi
+    echo "hypernova-tray.service is enabled for login."
+    echo "Run 'hypernova-ctl tray on' to start it now, or 'hypernova-ctl tray off' to disable it."
+}
+
+pre_remove() {
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --global disable hypernova-tray.service >/dev/null 2>&1 || true
+    fi
+}
