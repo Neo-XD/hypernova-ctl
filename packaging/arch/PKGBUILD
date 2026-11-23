@@ -1,6 +1,6 @@
 pkgname=hypernova-ctl
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Linux CLI for configuring the Cosmic Byte Hypernova gaming mouse"
 arch=('x86_64' 'aarch64')
 url="https://github.com/Neo-XD/hypernova-ctl"
@@ -34,7 +34,7 @@ check() {
 package() {
     cd "$pkgname"
     install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
-    install -Dm644 "99-cosmic-byte-hypernova.rules" "$pkgdir/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules"
+    install -Dm644 "70-cosmic-byte-hypernova.rules" "$pkgdir/usr/lib/udev/rules.d/70-cosmic-byte-hypernova.rules"
     install -Dm644 "packaging/systemd/hypernova-tray.service" "$pkgdir/usr/lib/systemd/user/hypernova-tray.service"
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"

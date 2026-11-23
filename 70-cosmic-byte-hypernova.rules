@@ -1,3 +1,4 @@
 # Cosmic Byte Hypernova (Compx 0x3554) - Wired (0xF5FA) and 4K Wireless Dongle (0xF5FB)
+# Numbered 70- so TAG+="uaccess" runs before systemd's 73-seat-late.rules.
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3554", ATTRS{idProduct}=="f5fa", MODE="0660", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3554", ATTRS{idProduct}=="f5fb", MODE="0660", TAG+="uaccess"

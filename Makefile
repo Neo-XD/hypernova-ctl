@@ -6,7 +6,7 @@ DESTDIR ?=
 CARGO ?= cargo
 
 BIN := hypernova-ctl
-RULES := 99-cosmic-byte-hypernova.rules
+RULES := 70-cosmic-byte-hypernova.rules
 SERVICE := packaging/systemd/hypernova-tray.service
 RELEASE_BIN := target/release/$(BIN)
 

@@ -15,7 +15,7 @@ cd packaging/arch
 makepkg -si
 ```
 
-This installs `/usr/bin/hypernova-ctl`, `/usr/lib/udev/rules.d/99-cosmic-byte-hypernova.rules`, and `/usr/lib/systemd/user/hypernova-tray.service` (enabled by default for login). Pacman reloads udev rules automatically. Unplug and replug the mouse or 4K dongle once so the new rule applies, then run `hypernova-ctl` from any directory without `sudo`. Run `hypernova-ctl tray on` to start the tray in the current session, or `hypernova-ctl tray off` to disable it.
+This installs `/usr/bin/hypernova-ctl`, `/usr/lib/udev/rules.d/70-cosmic-byte-hypernova.rules`, and `/usr/lib/systemd/user/hypernova-tray.service` (enabled by default for login). Pacman reloads and triggers udev automatically, so `hypernova-ctl` runs from any directory without `sudo`. Run `hypernova-ctl tray on` to start the tray in the current session, or `hypernova-ctl tray off` to disable it.
 
 ### Any Linux Distro (`make`)
 
@@ -24,13 +24,13 @@ make
 sudo make install
 ```
 
-This builds the stripped release binary, installs `/usr/local/bin/hypernova-ctl` and `/etc/udev/rules.d/99-cosmic-byte-hypernova.rules`, and reloads udev. Override `PREFIX` or `DESTDIR` if needed. Run `sudo make uninstall` to remove both files. Unplug and replug the mouse or 4K dongle after installing.
+This builds the stripped release binary, installs `/usr/local/bin/hypernova-ctl` and `/etc/udev/rules.d/70-cosmic-byte-hypernova.rules`, and reloads udev. Override `PREFIX` or `DESTDIR` if needed. Run `sudo make uninstall` to remove both files. Unplug and replug the mouse or 4K dongle after installing.
 
 ### Cargo User Install
 
 ```sh
 cargo install --path .
-sudo cp 99-cosmic-byte-hypernova.rules /etc/udev/rules.d/
+sudo cp 70-cosmic-byte-hypernova.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```

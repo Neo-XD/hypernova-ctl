@@ -330,8 +330,13 @@ fn ensure_device(
 fn poll_device(slot: &mut Option<HypernovaDevice<HidApiTransport>>) -> PollOutcome {
     let dev = match ensure_device(slot) {
         Ok(dev) => dev,
-        Err(_) => {
+        Err(err) => {
             *slot = None;
+            let msg = err.to_string();
+            if msg.contains("Permission denied") {
+                eprintln!("hypernova-ctl tray: {msg}");
+                return PollOutcome::PermissionDenied;
+            }
             return PollOutcome::Disconnected;
         }
     };

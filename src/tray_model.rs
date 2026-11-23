@@ -13,6 +13,7 @@ pub enum PollOutcome {
     Asleep {
         connection: ConnectionKind,
     },
+    PermissionDenied,
     Disconnected,
 }
 
@@ -56,11 +57,19 @@ impl TrayState {
                 self.connection = Some(connection);
                 self.online = false;
             }
+            PollOutcome::PermissionDenied => {
+                self.connection = None;
+                self.online = false;
+                self.battery = None;
+                self.config = None;
+                self.last_notice = Some("Permission denied on hidraw (check udev rule)".to_string());
+            }
             PollOutcome::Disconnected => {
                 self.connection = None;
                 self.online = false;
                 self.battery = None;
                 self.config = None;
+                self.last_notice = None;
             }
         }
     }
@@ -122,7 +131,11 @@ impl TrayState {
 
     pub fn status_summary(&self) -> String {
         let Some(conn) = self.connection else {
-            return "Hypernova: Disconnected".to_string();
+            return if self.last_notice.is_some() {
+                "Hypernova: Permission Denied".to_string()
+            } else {
+                "Hypernova: Disconnected".to_string()
+            };
         };
         let label = short_connection_label(conn);
         match (self.battery, self.online) {
@@ -399,10 +412,15 @@ mod tests {
         );
         assert_eq!(state.status_summary(), "82% (Asleep) · 4K Wireless");
 
+        state.apply_poll(PollOutcome::PermissionDenied);
+        assert_eq!(state.status_summary(), "Hypernova: Permission Denied");
+        assert!(state.last_notice.is_some());
+
         state.apply_poll(PollOutcome::Disconnected);
         assert_eq!(state.icon_badge(), IconBadge::Disconnected);
         assert!(state.battery.is_none());
         assert!(state.config.is_none());
+        assert!(state.last_notice.is_none());
     }
 
     #[test]
