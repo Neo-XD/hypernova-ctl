@@ -47,7 +47,7 @@ pub enum ProtocolError {
     BadChecksum { expected: u8, actual: u8 },
     #[error("unexpected response command: expected 0x{expected:02X}, got 0x{actual:02X}")]
     UnexpectedCommand { expected: u8, actual: u8 },
-    #[error("invalid polling rate {0} Hz (supported: 125, 250, 500, 1000, 2000, 4000)")]
+    #[error("invalid polling rate {0} Hz (supported: 125, 250, 500, 1000, 2000, 4000, 8000)")]
     InvalidPollingRate(u16),
     #[error("polling rate {rate_hz} Hz is not supported on this connection (max {max_hz} Hz)")]
     UnsupportedPollingRateForConnection { rate_hz: u16, max_hz: u16 },
@@ -141,13 +141,17 @@ pub enum PollingRate {
     Hz1000 = 0x01,
     Hz2000 = 0x10,
     Hz4000 = 0x20,
+    Hz8000 = 0x40,
 }
 
-pub const WIRED_POLLING_RATES: [PollingRate; 4] = [
+pub const WIRED_POLLING_RATES: [PollingRate; 7] = [
     PollingRate::Hz125,
     PollingRate::Hz250,
     PollingRate::Hz500,
     PollingRate::Hz1000,
+    PollingRate::Hz2000,
+    PollingRate::Hz4000,
+    PollingRate::Hz8000,
 ];
 
 pub const WIRELESS_4K_POLLING_RATES: [PollingRate; 6] = [
@@ -168,6 +172,7 @@ impl PollingRate {
             1000 => Ok(Self::Hz1000),
             2000 => Ok(Self::Hz2000),
             4000 => Ok(Self::Hz4000),
+            8000 => Ok(Self::Hz8000),
             other => Err(ProtocolError::InvalidPollingRate(other)),
         }
     }
@@ -180,6 +185,7 @@ impl PollingRate {
             0x01 => Some(Self::Hz1000),
             0x10 => Some(Self::Hz2000),
             0x20 => Some(Self::Hz4000),
+            0x40 => Some(Self::Hz8000),
             _ => None,
         }
     }
@@ -192,6 +198,7 @@ impl PollingRate {
             Self::Hz1000 => 1000,
             Self::Hz2000 => 2000,
             Self::Hz4000 => 4000,
+            Self::Hz8000 => 8000,
         }
     }
 
@@ -236,7 +243,7 @@ impl PollingRate {
     }
 
     pub fn manages_sensor_mode_internally(self) -> bool {
-        matches!(self, Self::Hz2000 | Self::Hz4000)
+        matches!(self, Self::Hz2000 | Self::Hz4000 | Self::Hz8000)
     }
 }
 
@@ -584,15 +591,16 @@ mod tests {
         assert_eq!(PollingRate::Hz125.step_down(&WIRED_POLLING_RATES), PollingRate::Hz125);
         assert_eq!(PollingRate::Hz500.step_down(&WIRED_POLLING_RATES), PollingRate::Hz250);
         assert_eq!(PollingRate::Hz500.step_up(&WIRED_POLLING_RATES), PollingRate::Hz1000);
-        assert_eq!(PollingRate::Hz1000.step_up(&WIRED_POLLING_RATES), PollingRate::Hz1000);
-        assert_eq!(PollingRate::Hz1000.cycle(&WIRED_POLLING_RATES), PollingRate::Hz125);
+        assert_eq!(PollingRate::Hz4000.step_up(&WIRED_POLLING_RATES), PollingRate::Hz8000);
+        assert_eq!(PollingRate::Hz8000.step_up(&WIRED_POLLING_RATES), PollingRate::Hz8000);
+        assert_eq!(PollingRate::Hz8000.cycle(&WIRED_POLLING_RATES), PollingRate::Hz125);
         assert_eq!(PollingRate::Hz1000.step_up(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz2000);
         assert_eq!(PollingRate::Hz4000.step_up(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz4000);
         assert_eq!(PollingRate::Hz4000.cycle(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz125);
-        // When flash holds a wireless-only rate while connected wired, stepping falls back into range.
-        assert_eq!(PollingRate::Hz4000.step_up(&WIRED_POLLING_RATES), PollingRate::Hz1000);
-        assert_eq!(PollingRate::Hz4000.step_down(&WIRED_POLLING_RATES), PollingRate::Hz1000);
-        assert_eq!(PollingRate::Hz4000.cycle(&WIRED_POLLING_RATES), PollingRate::Hz125);
+        // When flash holds a wired-only 8K rate while on the 4K dongle, stepping falls back into range.
+        assert_eq!(PollingRate::Hz8000.step_up(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz4000);
+        assert_eq!(PollingRate::Hz8000.step_down(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz4000);
+        assert_eq!(PollingRate::Hz8000.cycle(&WIRELESS_4K_POLLING_RATES), PollingRate::Hz125);
     }
 
     #[test]
@@ -601,6 +609,7 @@ mod tests {
         assert!(!PollingRate::Hz1000.manages_sensor_mode_internally());
         assert!(PollingRate::Hz2000.manages_sensor_mode_internally());
         assert!(PollingRate::Hz4000.manages_sensor_mode_internally());
+        assert!(PollingRate::Hz8000.manages_sensor_mode_internally());
     }
 
     #[test]

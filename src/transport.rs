@@ -26,7 +26,7 @@ impl ConnectionKind {
 
     pub fn max_polling_rate(self) -> PollingRate {
         match self {
-            Self::Wired => PollingRate::Hz1000,
+            Self::Wired => PollingRate::Hz8000,
             Self::Wireless4K => PollingRate::Hz4000,
         }
     }

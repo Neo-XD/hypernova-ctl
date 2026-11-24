@@ -136,7 +136,7 @@ impl HypernovaTray {
                     label: if mode_editable {
                         "Sensor Mode".into()
                     } else {
-                        "Sensor Mode (Auto at 2K/4K)".into()
+                        "Sensor Mode (Auto at 2K+)".into()
                     },
                     enabled: mode_editable,
                     submenu: vec![RadioGroup {

@@ -68,7 +68,7 @@ enum Command {
     Dpi(DpiCommand),
     /// Read or set USB polling rate (<hz>, up, down, cycle, max; omit to read current).
     Rate {
-        /// Target Hz (125, 250, 500, 1000, 2000, 4000) or up/down/cycle/max. Omit to read current.
+        /// Target Hz (125, 250, 500, 1000, 2000, 4000, 8000) or up/down/cycle/max. Omit to read current.
         #[arg(value_parser = parse_rate_action)]
         action: Option<RateAction>,
     },
@@ -205,7 +205,7 @@ fn parse_rate_action(input: &str) -> Result<RateAction, String> {
     }
     let hz: u16 = input
         .parse()
-        .map_err(|_| format!("expected Hz (125..4000) or up/down/cycle/max, got '{input}'"))?;
+        .map_err(|_| format!("expected Hz (125..8000) or up/down/cycle/max, got '{input}'"))?;
     PollingRate::from_hz(hz)
         .map(RateAction::Exact)
         .map_err(|e| e.to_string())
@@ -501,11 +501,12 @@ mod tests {
     fn parse_rate_action_accepts_hz_and_keywords() {
         assert_eq!(parse_rate_action("125").unwrap(), RateAction::Exact(PollingRate::Hz125));
         assert_eq!(parse_rate_action("4000").unwrap(), RateAction::Exact(PollingRate::Hz4000));
+        assert_eq!(parse_rate_action("8000").unwrap(), RateAction::Exact(PollingRate::Hz8000));
         assert_eq!(parse_rate_action("up").unwrap(), RateAction::Up);
         assert_eq!(parse_rate_action("DOWN").unwrap(), RateAction::Down);
         assert_eq!(parse_rate_action("cycle").unwrap(), RateAction::Cycle);
         assert_eq!(parse_rate_action("max").unwrap(), RateAction::Max);
-        assert!(parse_rate_action("8000").is_err());
+        assert!(parse_rate_action("16000").is_err());
         assert!(parse_rate_action("fast").is_err());
     }
 

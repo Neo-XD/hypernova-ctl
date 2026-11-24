@@ -85,7 +85,7 @@ checksum(bytes) = (0x55 - sum(bytes)) mod 256
 
 ### Polling Rate Constraints (`sensorrate.obj`, `functionset.obj`)
 
-- Connection limits (`SensorRate::SetHide`): Wired USB (`0xF5FA`) allows `125`, `250`, `500`, and `1000` Hz. The 4K wireless dongle (`0xF5FB`) allows `125`, `250`, `500`, `1000`, `2000`, and `4000` Hz.
+- Connection limits: Wired USB (`0xF5FA`) supports `125`, `250`, `500`, `1000`, `2000`, `4000`, and `8000` Hz (`0x40`). The 4K wireless dongle (`0xF5FB`) supports `125`, `250`, `500`, `1000`, `2000`, and `4000` Hz.
 - Pre-write online check (`FunctionSet::SetReportRate`): The vendor driver checks `CMD_GET_ONLINE` (`0x03`) before writing `0x00` and aborts if the mouse is asleep.
 - Sensor mode at `>= 2000` Hz (`SensorRate::on_Button*HZ_clicked`): No extra HID packet is sent. The firmware manages sensor power mode internally and the vendor GUI hides the LP/HP selector (`PostHideModel(1)`).
 

@@ -50,7 +50,7 @@ hypernova-ctl status
 # Wait up to 5s by default if the wireless mouse is asleep (use --wait 0 to fail immediately)
 hypernova-ctl --wait 10 rate 4000
 
-# Read or adjust polling rate (wired: 125..1000 Hz, 4K dongle: 125..4000 Hz)
+# Read or adjust polling rate (wired: 125..8000 Hz, 4K dongle: 125..4000 Hz)
 hypernova-ctl rate
 hypernova-ctl rate 4000
 hypernova-ctl rate up

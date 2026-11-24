@@ -34,7 +34,7 @@ impl SensorPage {
 
         let rate_combo = adw::ComboRow::builder()
             .title("USB Polling Rate")
-            .subtitle("Wired supports up to 1000 Hz; 4K dongle supports up to 4000 Hz")
+            .subtitle("Wired supports up to 8000 Hz; 4K dongle supports up to 4000 Hz")
             .build();
 
         let tx_rate = cmd_tx.clone();
@@ -175,7 +175,7 @@ impl SensorPage {
         let fw_managed = cfg.polling_rate.manages_sensor_mode_internally();
         self.sensor_mode_combo.set_sensitive(!fw_managed);
         self.sensor_mode_combo.set_subtitle(if fw_managed {
-            "Firmware-managed at 2000 Hz and 4000 Hz"
+            "Firmware-managed at 2000 Hz and above"
         } else {
             "Low Power saves battery; High Performance lowers tracking latency"
         });

@@ -371,25 +371,21 @@ mod tests {
     }
 
     #[test]
-    fn wired_connection_rejects_2k_and_4k_without_hid_io() {
-        let dev = HypernovaDevice::new(FakeTransport::wired());
-        let err_2k = dev.set_polling_rate(PollingRate::Hz2000).unwrap_err();
+    fn wireless_4k_rejects_8k_while_wired_accepts_8k() {
+        let wireless = HypernovaDevice::new(FakeTransport::new());
+        let err_8k = wireless.set_polling_rate(PollingRate::Hz8000).unwrap_err();
         assert!(matches!(
-            err_2k,
+            err_8k,
             TransportError::Protocol(ProtocolError::UnsupportedPollingRateForConnection {
-                rate_hz: 2000,
-                max_hz: 1000
+                rate_hz: 8000,
+                max_hz: 4000
             })
         ));
-        let err_4k = dev.set_polling_rate(PollingRate::Hz4000).unwrap_err();
-        assert!(matches!(
-            err_4k,
-            TransportError::Protocol(ProtocolError::UnsupportedPollingRateForConnection {
-                rate_hz: 4000,
-                max_hz: 1000
-            })
-        ));
-        assert!(dev.transport.sent.borrow().is_empty());
+        assert!(wireless.transport.sent.borrow().is_empty());
+
+        let wired = HypernovaDevice::new(FakeTransport::wired());
+        wired.set_polling_rate(PollingRate::Hz8000).unwrap();
+        assert_eq!(wired.read_polling_rate().unwrap(), PollingRate::Hz8000);
     }
 
     #[test]
@@ -428,12 +424,12 @@ mod tests {
     #[test]
     fn step_polling_rate_clamps_skips_redundant_writes_and_cycles() {
         let wired = HypernovaDevice::new(FakeTransport::wired());
-        wired.set_polling_rate(PollingRate::Hz1000).unwrap();
+        wired.set_polling_rate(PollingRate::Hz8000).unwrap();
         wired.transport.sent.borrow_mut().clear();
 
         assert_eq!(
             wired.step_polling_rate(PollingRateStep::Up).unwrap(),
-            (PollingRate::Hz1000, PollingRate::Hz1000)
+            (PollingRate::Hz8000, PollingRate::Hz8000)
         );
         assert!(wired
             .transport
@@ -444,7 +440,7 @@ mod tests {
 
         assert_eq!(
             wired.step_polling_rate(PollingRateStep::Cycle).unwrap(),
-            (PollingRate::Hz1000, PollingRate::Hz125)
+            (PollingRate::Hz8000, PollingRate::Hz125)
         );
         assert_eq!(wired.read_polling_rate().unwrap(), PollingRate::Hz125);
 
