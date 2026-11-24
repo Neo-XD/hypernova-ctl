@@ -8,6 +8,8 @@
 /packaging/arch/*.pkg.tar.*
 /packaging/appimage/AppDir/
 /packaging/appimage/tools/
+/packaging/deb/stage/
+/packaging/rpm/build/
 *.rs.bk
 .DS_Store
 Thumbs.db

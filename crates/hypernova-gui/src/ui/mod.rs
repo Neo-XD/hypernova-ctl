@@ -1,3 +1,4 @@
+mod about_page;
 mod dpi_page;
 mod power_page;
 mod sensor_page;
@@ -22,6 +23,7 @@ pub fn build_window(app: &adw::Application) {
     let dpi_page = dpi_page::DpiPage::new(cmd_tx.clone(), updating.clone());
     let sensor_page = sensor_page::SensorPage::new(cmd_tx.clone(), updating.clone());
     let power_page = power_page::PowerPage::new(cmd_tx.clone(), updating.clone());
+    let about_page = about_page::AboutPage::new();
 
     view_stack
         .add_titled(&dpi_page.widget, Some("dpi"), "DPI")
@@ -32,6 +34,9 @@ pub fn build_window(app: &adw::Application) {
     view_stack
         .add_titled(&power_page.widget, Some("power"), "Power")
         .set_icon_name(Some("battery-good-symbolic"));
+    view_stack
+        .add_titled(&about_page.widget, Some("about"), "About")
+        .set_icon_name(Some("help-about-symbolic"));
 
     let switcher_title = adw::ViewSwitcherTitle::builder()
         .stack(&view_stack)

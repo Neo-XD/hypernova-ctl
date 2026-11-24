@@ -1,4 +1,4 @@
-name: Build AppImage
+name: Build and Release Packages
 
 on:
   push:
@@ -7,8 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  appimage:
+  packages:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
@@ -22,7 +25,8 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             pkg-config \
-            file
+            file \
+            rpm
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -30,13 +34,34 @@ jobs:
       - name: Run workspace tests
         run: cargo test --workspace
 
-      - name: Build AppImage
+      - name: Build AppImage, DEB, and RPM packages
         run: |
-          chmod +x packaging/appimage/build-appimage.sh
+          chmod +x packaging/appimage/build-appimage.sh packaging/deb/build-deb.sh packaging/rpm/build-rpm.sh
           ./packaging/appimage/build-appimage.sh
+          ./packaging/deb/build-deb.sh
+          ./packaging/rpm/build-rpm.sh
 
-      - name: Upload AppImage artifact
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          sha256sum hypernova-gui-x86_64.AppImage > hypernova-gui-x86_64.AppImage.sha256
+          sha256sum *.AppImage *.deb *.rpm > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hypernova-gui-x86_64-appimage
-          path: dist/hypernova-gui-x86_64.AppImage
+          name: hypernova-linux-packages
+          path: dist/*
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/hypernova-gui-x86_64.AppImage
+            dist/hypernova-gui-x86_64.AppImage.sha256
+            dist/*.deb
+            dist/*.rpm
+            dist/SHA256SUMS.txt
