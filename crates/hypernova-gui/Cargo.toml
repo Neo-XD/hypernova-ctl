@@ -1,0 +1,12 @@
+[package]
+name = "hypernova-gui"
+version = "0.1.0"
+edition = "2021"
+description = "GTK4 / libadwaita desktop GUI for the Cosmic Byte Hypernova gaming mouse"
+license = "MIT"
+repository = "https://github.com/Neo-XD/hypernova-ctl"
+
+[dependencies]
+hypernova-ctl = { path = "../.." }
+gtk4 = "0.9"
+libadwaita = "0.7"

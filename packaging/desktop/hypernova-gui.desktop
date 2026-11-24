@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hypernova Control
+Comment=Configure the Cosmic Byte Hypernova gaming mouse
+Exec=hypernova-gui
+Icon=hypernova-gui
+Terminal=false
+Categories=Settings;HardwareSettings;Utility;
+Keywords=mouse;dpi;polling;hypernova;cosmic;
+StartupWMClass=io.github.neo_xd.HypernovaGui

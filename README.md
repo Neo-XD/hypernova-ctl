@@ -79,3 +79,22 @@ hypernova-ctl tray off     # Disable autostart and stop
 hypernova-ctl tray status  # Show systemd user service state
 hypernova-ctl tray run     # Run in foreground
 ```
+
+## Desktop GUI & AppImage
+
+The `hypernova-gui` workspace crate provides a GTK4 + libadwaita desktop interface for DPI stages, polling rate, PAW3395 sensor controls, sleep timer, tray toggle, and factory reset.
+
+Build and run locally (requires `gtk4` and `libadwaita` development libraries):
+
+```sh
+cargo run -p hypernova-gui --release
+```
+
+Build a local AppImage:
+
+```sh
+chmod +x packaging/appimage/build-appimage.sh
+./packaging/appimage/build-appimage.sh
+```
+
+For cross-distro AppImages targeting older glibc, `.github/workflows/appimage.yml` builds `hypernova-gui-x86_64.AppImage` on Ubuntu 22.04.
